@@ -1499,6 +1499,8 @@ export type Reference<Options extends ReferenceOptions = {}> = { __meta?: ['refe
 export type BackReference<Options extends BackReferenceOptions = {}> = { __meta?: ['backReference', Options] };
 export type EmbeddedMeta<Options> = { __meta?: ['embedded', Options] };
 export type Embedded<T, Options extends { prefix?: string } = {}> = T & EmbeddedMeta<Options>;
+export type WrappedMeta<Options> = { __meta?: ['wrapped', Options] };
+export type Wrapped<T, Options extends { prefix?: string } = {}> = T & WrappedMeta<Options>;
 
 export type MapName<Alias extends string, ForSerializer extends string = ''> = { __meta?: ['mapName', Alias, ForSerializer] };
 
