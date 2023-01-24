@@ -14,15 +14,6 @@
       "path": "packages/api-console-api/tsconfig.json"
     },
     {
-      "path": "packages/api-console-module/tsconfig.json"
-    },
-    {
-      "path": "packages/app/tsconfig.json"
-    },
-    {
-      "path": "packages/create-app/tsconfig.json"
-    },
-    {
       "path": "packages/event/tsconfig.json"
     },
     {
@@ -32,19 +23,10 @@
       "path": "packages/stopwatch/tsconfig.json"
     },
     {
-      "path": "packages/http/tsconfig.json"
-    },
-    {
       "path": "packages/template/tsconfig.json"
     },
     {
       "path": "packages/skeleton/tsconfig.json"
-    },
-    {
-      "path": "packages/framework-debug-api/tsconfig.json"
-    },
-    {
-      "path": "packages/framework/tsconfig.json"
     },
     {
       "path": "packages/type/tsconfig.json"
@@ -57,21 +39,6 @@
     },
     {
       "path": "packages/injector/tsconfig.json"
-    },
-    {
-      "path": "packages/mongo/tsconfig.json"
-    },
-    {
-      "path": "packages/sql/tsconfig.json"
-    },
-    {
-      "path": "packages/mysql/tsconfig.json"
-    },
-    {
-      "path": "packages/postgres/tsconfig.json"
-    },
-    {
-      "path": "packages/sqlite/tsconfig.json"
     },
     {
       "path": "packages/rpc/tsconfig.json"
@@ -89,16 +56,7 @@
       "path": "packages/orm/tsconfig.json"
     },
     {
-      "path": "packages/orm-browser/tsconfig.json"
-    },
-    {
       "path": "packages/orm-browser-api/tsconfig.json"
-    },
-    {
-      "path": "packages/orm-integration/tsconfig.json"
-    },
-    {
-      "path": "packages/angular-universal/tsconfig.json"
     },
     {
       "path": "packages/broker/tsconfig.json"
