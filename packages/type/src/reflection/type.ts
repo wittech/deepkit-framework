@@ -1632,6 +1632,17 @@ export function getValueType(type: Type): Type {
     return { kind: ReflectionKind.any };
 }
 
+export interface WrappedOptions {
+    prefix?: string;
+}
+
+export const wrappedAnnotation = new AnnotationDefinition<WrappedOptions>('wrapped');
+
+export function hasWrapped(type: Type): boolean {
+    if (type.kind === ReflectionKind.propertySignature || type.kind === ReflectionKind.property) return hasWrapped(type.type);
+    if (type.kind === ReflectionKind.union) return type.types.some(hasWrapped);
+    return wrappedAnnotation.getFirst(type) !== undefined;
+}
 
 export interface EmbeddedOptions {
     prefix?: string;
@@ -1829,6 +1840,13 @@ export const typeDecorators: TypeDecorator[] = [
                 if (!optionsType || optionsType.type.kind !== ReflectionKind.objectLiteral) return false;
                 const options = typeToObject(optionsType.type);
                 embeddedAnnotation.replace(annotations, [options]);
+                return true;
+            }
+            case 'wrapped': {
+                const optionsType = meta.type.types[1];
+                if (!optionsType || optionsType.type.kind !== ReflectionKind.objectLiteral) return false;
+                const options = typeToObject(optionsType.type);
+                wrappedAnnotation.replace(annotations, [options]);
                 return true;
             }
             case 'group': {

@@ -364,7 +364,7 @@ export class TemplateState {
         return !!this.validation;
     }
 
-    withValidation(validation: typeof this['validation']): this {
+    withValidation(validation: any): this {
         this.validation = validation;
         return this;
     }
