@@ -60,6 +60,7 @@ import { createReference, isReferenceHydrated, isReferenceInstance } from './ref
 import { validate, ValidationError, ValidationErrorItem } from './validator.js';
 import { validators } from './validators.js';
 import { arrayBufferToBase64, base64ToArrayBuffer, base64ToTypedArray, typedArrayToBase64, typeSettings, UnpopulatedCheck, unpopulatedSymbol } from './core.js';
+import { Decimal } from 'decimal.js';
 
 /**
  * Make sure to change the id when a custom naming strategy is implemented, since caches are based on it.
@@ -813,6 +814,21 @@ export function inAccessor(accessor: ContainerAccessor | string): string {
     return `'object' === typeof ${accessor.container} && ${accessor.property} in ${accessor.container}`;
 }
 
+function getEmbeddedObjectAccessor(
+    type: TypeClass | TypeObjectLiteral,
+    autoPrefix: boolean,
+    accessor: string | ContainerAccessor,
+    serializer: Serializer,
+    namingStrategy: NamingStrategy,
+    property: TypeProperty | TypePropertySignature,
+    embedded: EmbeddedOptions,
+    container?: string
+  ): string | ContainerAccessor {
+    let propertyName = String(namingStrategy.getPropertyName(property, serializer.name));
+    propertyName = embedded.prefix ? JSON.stringify(`${embedded.prefix}${capitalize(propertyName)}`) : JSON.stringify(propertyName);
+    return new ContainerAccessor(accessor, propertyName);
+}
+
 export function deserializeEmbedded(type: TypeClass | TypeObjectLiteral, state: TemplateState, container?: string): string {
     const embedded = embeddedAnnotation.getFirst(type);
     if (!embedded) return '';
@@ -820,17 +836,21 @@ export function deserializeEmbedded(type: TypeClass | TypeObjectLiteral, state: 
     const properties = resolveTypeMembers(type).filter(isPropertyMemberType);
     const args: (ContainerAccessor | string)[] = [];
     const assign: (ContainerAccessor | string)[] = [];
+    const assignObject: (ContainerAccessor | string)[] = [];
     const loadArgs: string[] = [];
+    const loadArgsObject: string[] = [];
     const setToUndefined = state.compilerContext.reserveName('setToUndefined');
     const params = state.compilerContext.reserveName('params');
-    const requiredSet: string[] = ['true'];
+    // const requiredSet: string[] = ['true'];
+    // const requiredSetObject: string[] = ['true'];
 
     function loadProperty(setter: ContainerAccessor, property: TypeProperty | TypePropertySignature) {
+        let required;
         if (!isOptional(property) && !hasDefaultValue(property)) {
             if (isNullable(property)) {
-                requiredSet.push(`${setter} !== undefined`);
+                required = `${setter} !== undefined`;
             } else {
-                requiredSet.push(`${setter} !== undefined && ${setter} !== null`);
+                required = `${setter} !== undefined && ${setter} !== null`;
             }
         }
 
@@ -852,6 +872,47 @@ export function deserializeEmbedded(type: TypeClass | TypeObjectLiteral, state: 
                 loadArgs.push(executeTemplates(propertyState, property.type));
             }
         }
+        // assign.push(`${new ContainerAccessor(state.setter, JSON.stringify(property.name))} = ` + setter);
+        if (required) {
+            assign.push(`if(${required}){${new ContainerAccessor(state.setter, JSON.stringify(property.name))} = ` + setter + '}');
+        } else {
+            assign.push(`${new ContainerAccessor(state.setter, JSON.stringify(property.name))} = ` + setter);
+        }
+    }
+
+    function loadPropertyObject(setter: ContainerAccessor, property: TypeProperty | TypePropertySignature) {
+        let required;
+        if (!isOptional(property) && !hasDefaultValue(property)) {
+            if (isNullable(property)) {
+                required = `${setter} !== undefined`;
+            } else {
+                required = `${setter} !== undefined && ${setter} !== null`;
+            }
+        }
+
+        const accessor = getEmbeddedObjectAccessor(type, properties.length !== 1, state.accessor, state.registry.serializer, state.namingStrategy, property, embedded!, container);
+        const propertyState = state.fork(setter, accessor).extendPath(String(property.name));
+        if (hasEmbedded(property.type)) {
+            loadArgsObject.push(executeTemplates(propertyState, property.type));
+        } else {
+            if (accessor instanceof ContainerAccessor) {
+                const check = !containerProperty ? 'true' : isNullable(containerProperty) ? `${accessor} === undefined` : `(${accessor} === undefined || ${accessor} === null)`;
+                const setUndefined = containerProperty ? `if (${check}) { ${setToUndefined}++; }` : 'if (false) {} ';
+                loadArgsObject.push(`
+                    if (${accessor}) {
+                        ${setUndefined} else {
+                            ${executeTemplates(propertyState, property.type)}
+                        }
+                    }`);
+            } else {
+                loadArgsObject.push(executeTemplates(propertyState, property.type));
+            }
+        }
+        if (required) {
+            assignObject.push(`if(${required}){${new ContainerAccessor(state.setter, JSON.stringify(property.name))} = ` + setter + '}');
+        } else {
+            assignObject.push(`${new ContainerAccessor(state.setter, JSON.stringify(property.name))} = ` + setter);
+        }
     }
 
     const containerProperty = getEmbeddedProperty(type);
@@ -872,21 +933,42 @@ export function deserializeEmbedded(type: TypeClass | TypeObjectLiteral, state: 
             if (constructorAssigned.includes(memberNameToString(property.name))) continue;
             const setter = new ContainerAccessor(params, JSON.stringify(property.name));
             loadProperty(setter, property);
-            assign.push(`${new ContainerAccessor(state.setter, JSON.stringify(property.name))} = ` + setter);
+            loadPropertyObject(setter, property);
+            // assign.push(`${new ContainerAccessor(state.setter, JSON.stringify(property.name))} = ` + setter);
         }
     }
 
     const createObject = type.kind === ReflectionKind.objectLiteral ? `{}` : `new ${state.compilerContext.reserveConst(type.classType)}(${args.join(',')})`;
 
+    // return `
+    //     const ${params} = {};
+    //     let ${setToUndefined} = 0;
+    //     ${loadArgs.join('\n')}
+    //     if (${requiredSet.join(' && ')}) {
+    //         ${state.setter} = ${createObject};
+    //         ${assign.join(';\n')}
+    //     } else if (${setToUndefined} === ${properties.length}) {
+    //         ${state.setter} = undefined;
+    //     }
+    // `;
     return `
         const ${params} = {};
         let ${setToUndefined} = 0;
-        ${loadArgs.join('\n')}
-        if (${requiredSet.join(' && ')}) {
-            ${state.setter} = ${createObject};
-            ${assign.join(';\n')}
-        } else if (${setToUndefined} === ${properties.length}) {
-            ${state.setter} = undefined;
+        ${state.setter} = ${createObject};
+        if("object" === typeof ${state.accessor}){
+            ${loadArgsObject.join(';\n')}
+            if (${setToUndefined} === ${properties.length}) {
+                ${state.setter} = undefined;
+            } else {
+                ${assignObject.join(';\n')}
+            }
+        } else {
+            ${loadArgs.join(';\n')}
+            if (${setToUndefined} === ${properties.length}) {
+                ${state.setter} = undefined;
+            } else {
+                ${assign.join(';\n')}
+            }
         }
     `;
 }
@@ -949,24 +1031,28 @@ export function getEmbeddedProperty(type: TypeClass | TypeObjectLiteral): TypePr
     return;
 }
 
+function capitalize(str: string): string {
+    return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
 function getEmbeddedAccessor(type: TypeClass | TypeObjectLiteral, autoPrefix: boolean, accessor: string | ContainerAccessor, serializer: Serializer, namingStrategy: NamingStrategy, property: TypeProperty | TypePropertySignature, embedded: EmbeddedOptions, container?: string): string | ContainerAccessor {
     const containerProperty = getEmbeddedProperty(type);
 
-    let embeddedPropertyName = JSON.stringify(namingStrategy.getPropertyName(property, serializer.name));
+    let embeddedPropertyName = String(namingStrategy.getPropertyName(property, serializer.name));
     if (embedded.prefix !== undefined) {
-        embeddedPropertyName = embedded.prefix ? JSON.stringify(embedded.prefix) + ' + ' + embeddedPropertyName : embeddedPropertyName;
+        embeddedPropertyName = embedded.prefix ? JSON.stringify(`${embedded.prefix}${capitalize(embeddedPropertyName)}`) : embeddedPropertyName;
     } else if (!container && containerProperty) {
-        embeddedPropertyName = JSON.stringify(containerProperty.name) + ` + '_' + ` + embeddedPropertyName;
+        embeddedPropertyName = JSON.stringify(`${String(containerProperty.name)}${capitalize(embeddedPropertyName)}`);
     }
 
     if (container) return new ContainerAccessor(container, embeddedPropertyName);
 
-    if ((autoPrefix || embedded.prefix !== undefined)) {
-        //if autoPrefix or a prefix is set the embeddedPropertyName is emitted in a container, either manually provided or from accessor.
-        if (accessor instanceof ContainerAccessor) return new ContainerAccessor(accessor.container, embeddedPropertyName);
-        if (autoPrefix) return new ContainerAccessor(accessor, embeddedPropertyName);
-        if (containerProperty) return new ContainerAccessor(accessor, embeddedPropertyName);
-    }
+    // if ((autoPrefix || embedded.prefix !== undefined)) {
+    //if autoPrefix or a prefix is set the embeddedPropertyName is emitted in a container, either manually provided or from accessor.
+    if (accessor instanceof ContainerAccessor) return new ContainerAccessor(accessor.container, embeddedPropertyName);
+    if (autoPrefix) return new ContainerAccessor(accessor, embeddedPropertyName);
+    if (containerProperty) return new ContainerAccessor(accessor, embeddedPropertyName);
+    // }
 
     return accessor;
 }
@@ -2121,7 +2207,7 @@ export class Serializer {
         });
 
         this.typeGuards.register(1, ReflectionKind.function, ((type, state) => {
-            state.setContext({ isFunction, isExtendable, resolveRuntimeType });
+            state.setContext({ isFunction, isExtendable, resolveRuntimeType, Decimal });
             const t = state.setVariable('type', type);
             state.addCodeForSetter(`
                 if (isFunction(${state.accessor})) {
@@ -2130,6 +2216,8 @@ export class Serializer {
                     } else {
                         ${state.setter} = true;
                     }
+                } else if(Decimal.isDecimal(${state.accessor})){
+                    ${state.setter} = true;
                 } else {
                     if (${state.isValidation()}) ${state.assignValidationError('type', 'Not a function')}
                     ${state.setter} = false;

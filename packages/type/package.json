@@ -29,6 +29,7 @@
   "dependencies": {
     "@deepkit/type-spec": "^1.0.1-alpha.77",
     "@types/uuid": "^8.3.0",
+    "decimal.js": "^10.4.3",
     "buffer": "^5.2.1",
     "uuid": "^8.3.2"
   },
